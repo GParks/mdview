@@ -42,6 +42,42 @@ var template string
 //go:embed mermaid.min.js
 var mermaidJS string
 
+// while I understand why the default arg parsing behavior of the flag package is to stop parsing 
+// at the first non-flag argument, I want to allow interspersed flags and arguments. 
+// This function creates a new FlagSet and parses the arguments, allowing for interspersed flags.
+// 2026-09-29: yes, I used AI to generate this; but yes, I unerstand it
+// I agree it contains "over-kill" (the "--" option isn't specified), 
+// but I want to contribute something, and I intend to re-use this for my own purposes later
+// *What is my motivation?* 
+// I created a bash script that wound up looking like `mdview filename.md -o filename.html`, 
+// and it was frustrating that it doesn't work that way, when there's no reason it shouldn't.
+func parseInterspersedArgs(flagSet *flag.FlagSet, args []string) ([]string, error) {
+	for i, arg := range args {
+		if arg == "--" {
+			positional, err := flagSet.Parse(args[:i])
+			if err != nil {
+				return nil, err
+			}
+			return append(positional, args[i+1:]...), nil
+		}
+	}
+
+	var psositional []string
+	for len(args) > 0 {
+		if err := flagSet.Parse(args); err != nil {
+			return nil, err
+		}
+		remaining := flagSet.Args()
+		if len(remaining) == 0 {
+			break
+		}
+		psositional = append(psositional, remaining[0])
+		args = remaining[1:]
+	}
+
+	return psositional, nil
+}
+
 func main() {
 	var outfilePtr = flag.String("o", "", "Output filename. (Optional)")
 	var versionPtr = flag.Bool("version", false, "Prints mdview version.")
@@ -52,7 +88,16 @@ func main() {
 	flag.BoolVar(barePtr, "b", false, "Bare HTML with no style applied.")
 
 	flag.Parse()
-	inputFilename := flag.Arg(0)
+	args, err := parseInterspersedArgs(flag.CommandLine, os.Args[1:])
+	if err != nil {
+		log.Println("Error parsing command-line arguments:", err)
+		os.Exit(2)
+	}
+
+	inputFilename := ""
+	if len(args) > 0 {
+		inputFilename = args[0]
+	}
 
 	if *versionPtr {
 		fmt.Println(appVersion)
