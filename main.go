@@ -42,19 +42,19 @@ var template string
 //go:embed mermaid.min.js
 var mermaidJS string
 
-// while I understand why the default arg parsing behavior of the flag package is to stop parsing 
-// at the first non-flag argument, I want to allow interspersed flags and arguments. 
+// while I understand why the default arg parsing behavior of the flag package is to stop parsing
+// at the first non-flag argument, I want to allow interspersed flags and arguments.
 // This function creates a new FlagSet and parses the arguments, allowing for interspersed flags.
 // 2026-09-29: yes, I used AI to generate this; but yes, I unerstand it
-// I agree it contains "over-kill" (the "--" option isn't specified), 
+// I agree it contains "over-kill" (the "--" option isn't specified),
 // but I want to contribute something, and I intend to re-use this for my own purposes later
-// *What is my motivation?* 
-// I created a bash script that wound up looking like `mdview filename.md -o filename.html`, 
+// *What is my motivation?*
+// I created a bash script that wound up looking like `mdview filename.md -o filename.html`,
 // and it was frustrating that it doesn't work that way, when there's no reason it shouldn't.
 func parseInterspersedArgs(flagSet *flag.FlagSet, args []string) ([]string, error) {
 	for i, arg := range args {
 		if arg == "--" {
-			positional, err := flagSet.Parse(args[:i])
+			positional, err := parseInterspersedArgs(flagSet, args[:i])
 			if err != nil {
 				return nil, err
 			}
@@ -114,7 +114,6 @@ func main() {
 	// paths are then resolved against the working directory, as there is no input
 	// file to anchor them to.
 	var dat []byte
-	var err error
 	baseDir := "."
 
 	if inputFilename == "-" {
@@ -133,10 +132,10 @@ func main() {
 	// Create Goldmark markdown processor with extensions
 	md := goldmark.New(
 		goldmark.WithExtensions(
-			extension.GFM,        // GitHub Flavored Markdown (includes tables)
+			extension.GFM,         // GitHub Flavored Markdown (includes tables)
 			extension.Typographer, // Smart quotes, dashes, etc.
 			&mermaid.Extender{
-				NoScript: true,   // Don't add CDN script tags - we'll add our own embedded version
+				NoScript: true, // Don't add CDN script tags - we'll add our own embedded version
 			},
 		),
 		goldmark.WithParserOptions(
@@ -149,17 +148,17 @@ func main() {
 
 	// Parse markdown to AST
 	doc := md.Parser().Parse(text.NewReader(processedBytes))
-	
+
 	// Extract title from AST
 	title := getTitleFromAST(doc, processedBytes)
-	
+
 	// Render to HTML
 	var buf bytes.Buffer
 	if err := md.Renderer().Render(&buf, processedBytes, doc); err != nil {
 		log.Fatal(err)
 	}
 	htmlContent := buf.String()
-	
+
 	// Add embedded Mermaid.js and initialization script when diagrams are present
 	htmlContent = embedMermaidScript(htmlContent)
 
@@ -284,7 +283,7 @@ func processMarkdownImages(markdown string, baseDir string) string {
 		}
 		alt := parts[1]
 		imgPath := parts[2]
-		
+
 		if isRelativePath(imgPath) {
 			if dataURI := imageToDataURI(imgPath, baseDir); dataURI != "" {
 				return fmt.Sprintf("![%s](%s)", alt, dataURI)
@@ -292,10 +291,10 @@ func processMarkdownImages(markdown string, baseDir string) string {
 		}
 		return match
 	})
-	
+
 	// Process HTML img tags in markdown
 	markdown = processHTMLImages(markdown, baseDir)
-	
+
 	return markdown
 }
 
@@ -308,27 +307,27 @@ func processHTMLImages(html string, baseDir string) string {
 		if len(parts) != 5 {
 			return match
 		}
-		
-		prefix := parts[1]      // "<img...src="
-		openQuote := parts[2]   // " or ' or empty
-		srcPath := parts[3]     // the actual path
-		closeQuote := parts[4]  // " or ' or empty
-		
+
+		prefix := parts[1]     // "<img...src="
+		openQuote := parts[2]  // " or ' or empty
+		srcPath := parts[3]    // the actual path
+		closeQuote := parts[4] // " or ' or empty
+
 		// If quotes don't match, return original (malformed HTML)
 		if openQuote != closeQuote {
 			return match
 		}
-		
+
 		// Check if the path is relative
 		if isRelativePath(srcPath) {
 			if dataURI := imageToDataURI(srcPath, baseDir); dataURI != "" {
 				return prefix + openQuote + dataURI + closeQuote
 			}
 		}
-		
+
 		return match
 	})
-	
+
 	return result
 }
 
@@ -353,21 +352,21 @@ func isRelativePath(path string) bool {
 func imageToDataURI(imagePath string, baseDir string) string {
 	// Resolve the full path relative to the markdown file
 	fullPath := filepath.Join(baseDir, imagePath)
-	
+
 	// Clean and validate the path to prevent path traversal attacks
 	cleanedPath, err := filepath.Abs(fullPath)
 	if err != nil {
 		log.Printf("Warning: Invalid image path %s: %v", fullPath, err)
 		return ""
 	}
-	
+
 	// Ensure the resolved path is within or relative to the base directory
 	cleanedBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		log.Printf("Warning: Invalid base directory %s: %v", baseDir, err)
 		return ""
 	}
-	
+
 	// Check if the cleaned path starts with the base directory or is a reasonable relative reference
 	// We allow accessing parent directories for flexibility with markdown repos
 	if !strings.HasPrefix(cleanedPath, cleanedBase) {
@@ -376,7 +375,7 @@ func imageToDataURI(imagePath string, baseDir string) string {
 			log.Printf("Warning: Unable to determine relative path for %s: %v", imagePath, err)
 			return ""
 		}
-		
+
 		// If the path goes outside the base directory, check parent traversal limits
 		if strings.HasPrefix(relPath, "..") {
 			// Allow up to 3 levels of parent directory traversal for flexibility
@@ -394,33 +393,33 @@ func imageToDataURI(imagePath string, baseDir string) string {
 			}
 		}
 	}
-	
+
 	// Check file size before reading (limit to 10MB to prevent memory issues)
 	fileInfo, err := os.Stat(cleanedPath)
 	if err != nil {
 		log.Printf("Warning: Unable to stat image file %s: %v", cleanedPath, err)
 		return ""
 	}
-	
+
 	const maxSize = 10 * 1024 * 1024 // 10MB
 	if fileInfo.Size() > maxSize {
 		log.Printf("Warning: Image file %s is too large (%d bytes, max %d bytes)", cleanedPath, fileInfo.Size(), maxSize)
 		return ""
 	}
-	
+
 	// Read the image file
 	data, err := os.ReadFile(cleanedPath)
 	if err != nil {
 		log.Printf("Warning: Unable to read image file %s: %v", cleanedPath, err)
 		return ""
 	}
-	
+
 	// Determine MIME type based on file extension
 	mimeType := getMimeType(cleanedPath)
-	
+
 	// Encode to base64
 	encoded := base64.StdEncoding.EncodeToString(data)
-	
+
 	// Return data URI
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
 }
@@ -458,11 +457,11 @@ func embedMermaidScript(htmlContent string) string {
 	if !strings.Contains(htmlContent, `class="mermaid"`) {
 		return htmlContent // No mermaid diagrams, don't add the script
 	}
-	
-	// Escape any </script> tags (with closing >) inside the mermaid.js code 
+
+	// Escape any </script> tags (with closing >) inside the mermaid.js code
 	// to prevent premature script closure. The standard way is to escape the forward slash.
 	escapedMermaidJS := strings.ReplaceAll(mermaidJS, "</script>", "<\\/script>")
-	
+
 	// Add the embedded Mermaid.js and initialization at the end of the content
 	// Initialize mermaid with theme detection
 	initScript := `
@@ -479,6 +478,6 @@ func embedMermaidScript(htmlContent string) string {
     });
   `
 	inlineScript := fmt.Sprintf("<script>%s</script><script>%s</script>", escapedMermaidJS, initScript)
-	
+
 	return htmlContent + inlineScript
 }
